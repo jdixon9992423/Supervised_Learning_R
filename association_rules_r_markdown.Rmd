@@ -1,0 +1,142 @@
+---
+title: "Association Rules"
+author: ""
+date: "2023-03-26"
+output: pdf_document
+geometry: 
+  - a3paper
+  - landscape
+  - left=0.5cm
+  - right=0.5cm
+  - top=1cm
+  - bottom=1cm
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,out.width = "2000px")
+```
+
+
+
+To determine the buying patterns of customers we need to know what items they usually buy together, to do this we are using association rule mining. for this We only need two columns from the dataset, the transaction ID(InvoiceNo) and the itemsID (StockCode). However we need to first clean the data.
+
+## DATA CLEANING
+
+```{r cars}
+library("arules")#load library to do association rules
+retail<-read.csv("OnlineRetail.csv",stringsAsFactors = FALSE)
+str(retail)
+View(retail)
+summary(retail)
+
+
+
+```
+
+
+We are only concerned with the Netherlands subset of the OnlineRetail Data.
+
+```{r}
+retail<-retail[retail$Country=="Netherlands",]#truncates the data to netherlands only
+```
+$\\ \\ \\ \\ \\$
+
+From viewing online retail dataset and sorting by the "InvoiceNo" column, we can see that some values are pre-pended with a 'C", we need to remove the "C"
+
+```{r}
+retail$InvoiceNo<-gsub("C","",retail$InvoiceNo)# substitutes C with an empty string in InvoiceNo column
+summary(retail$InvoiceNo)
+```
+$\\ \\$
+
+Now that all values in "InvoiceNo" column should be numeric, they are converted to numbers and placed in newly created "InvoiceNoVals" column
+```{r}
+retail$InvoiceNoVals<-as.integer(retail$InvoiceNo)#convert strings to numbers.
+summary(retail$InvoiceNoVals)#we can see the data is clean for this column
+```
+
+Now checking to make sure "StockCode" column is clean, from viewing the data, we can see that stockcode is alphanumeric and cannot be converted to numbers, however we can remove the rows where the item is post, as this indicates postage not actual items. We will also drop all the other columns we dont need and keet "StockCode" and "InvoiceNo
+```{r}
+retail<-retail[retail$StockCode!="POST",]#drop post items
+colnames(retail)#column 9 and 2
+retail<- retail[,c(9,2)]#drop columns apart from StockCode and InvoiceNo
+```
+
+
+```{r pressure, echo=FALSE}
+plot(table(retail$StockCode))
+```
+
+Write dataframe to csv file
+```{r}
+write.csv(retail,"subset_Netherlands.csv",row.names = FALSE)#export dataframe so we can reimport as transaction
+```
+
+## ASSOCIATION RULE MINING
+
+Read transactions 
+```{r}
+subset.netherlands<- read.transactions("subset_Netherlands.csv",format=c("single"),cols=c("InvoiceNoVals","StockCode"),rm.duplicates = FALSE,header=TRUE,sep = ",")
+inspect(subset.netherlands[1:2])#view transactions 1 and 2
+```
+$\\ \\$
+checking out reasonable value for support, top 20 items are above 0.1
+```{r}
+itemFrequencyPlot(subset.netherlands,topN=20)#checking out reasonable value for support, top 20 items have support above 0.1,
+```
+Using support of 0.1
+```{r}
+itemFrequencyPlot(subset.netherlands,support=0.10)#Using support of 0.1
+```
+$\\ \\$
+In order to resolve the StockCode values to item descriptions, re-load the original dataset
+```{r}
+retail1<-read.csv("OnlineRetail.csv",stringsAsFactors = FALSE)
+View(retail1)
+retail1[retail1$StockCode=="85900B","Description"][1]#find out what item corresponds to a StockCode
+```
+
+$\\ \\ \\ \\$
+Generate Rules using apriori function, and convert to dataframe, using min support=0.7 and min confindence=0.6
+```{r}
+knitr::opts_chunk$set(out.width = "1500px")
+rules<-apriori(subset.netherlands,parameter = list(confidence=0.6,support=0.1,minlen=2))
+inspect(rules)
+rulesdf<- as.data.frame(inspect(rules))
+```
+Drop the curly brackets around the StockCode values, and do a lookup of their corresponding descriptions from the orginal dataset and append them to the rules dataframe
+```{r}
+
+rulesdf[,1]<-as.character(gsub("[^[:alnum:],]", "", rulesdf[,1]))#extract numeric character and commas
+rulesdf[,3]<-as.character(gsub("[^[:alnum:],]", "", rulesdf[,3]))#extract numeric characters and commas
+
+for(i in 1:nrow(rulesdf)) {#find the description for each 
+  ante<-strsplit(rulesdf[i,1],",")[[1]]#split antecedent items
+  conse<-strsplit(rulesdf[i,3],",")[[1]]#split consequenct items
+  ante_final<-""
+  conse_final<-""
+  for( j in 1:length(ante) ){
+        ante_final<-paste0(ante_final, retail1[retail1$StockCode==ante[j],"Description"][1],"," )  
+   }
+  #print(ante_final)
+  
+  for (k in 1:length(conse) ){
+    conse_final<-paste0(conse_final, retail1[retail1$StockCode==conse[k],"Description"][1],"," )  
+  }    
+  rulesdf$lhs_description[i]<-ante_final
+  rulesdf$rhs_description[i]<-conse_final
+ #rulesdf$lhs_description[i]<- retail1[retail1$StockCode==rulesdf[i,1],"Description"][1]#gsub("C","",ORData[i,"InvoiceNo"])
+ #rulesdf$rhs_description[i]<- retail1[retail1$StockCode==rulesdf[i,3],"Description"][1]#gsub("C","",ORData[i,"InvoiceNo"])
+}
+
+rulesdf
+```
+
+
+
+
+```{r}
+rulesdf<- as.data.frame(inspect(rules))
+View(rulesdf)
+
+```
