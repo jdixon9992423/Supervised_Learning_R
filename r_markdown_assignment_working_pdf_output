@@ -1,6 +1,6 @@
 ---
-title: "620079044_assignment_1"
-author: "Jevaguhn Dixon"
+title: "assignment_1"
+author: "Hoy minoy"
 date: "2023-03-30"
 output: pdf_document
 geometry:
@@ -144,10 +144,11 @@ kable(rulesdf)
 The output above was generated with mining values lift >4, confidence>0.7, support>0.1:
 
 ### Interesting Rule 1: Rule 14
-Rule *One thing we can see if that if a person buys a "Red Toadstoll led night light" they are 337% more likely to buy a woodland Charlotte bag, this is with a confidence of 0.71 and a support of 0.14.
+Rule *One thing we can see if that if a person buys a "Red Toadstoll led night light" they are 337% more likely to buy a woodland Charlotte bag, this is with a confidence of 0.71 and a support of 0.14. This rule could be used to inform the country manager to include suggestions on the website while purchasing the red toadstoll led night light for the woodland charlotte bag, to increase sales
 
 ### Interesting Rule 2: Rule 10
-Another thing we can see is if a person buys Cowboys and Indians Birthday Card, they are likely to purchase Round Snack Boxes set of 4 woodland. This is with a confidence of 0.9, support of 0.91, and a lift of 3.5, so they are 250% more likely to make buy the snack boxes if they bought the cowboys and indians birthday card.
+Another thing we can see is if a person buys Cowboys and Indians Birthday Card, they are likely to purchase Round Snack Boxes set of 4 woodland. This is with a confidence of 0.9, support of 0.91, and a lift of 3.5, so they are 250% more likely to make buy the snack boxes if they bought the cowboys and indians birthday card. The country manager could use this to bundle these items together as a deal to attract sales.
+
 
 
 # CLUSTERING
@@ -319,6 +320,13 @@ cluster_6<-cutree(hclust,6)#cut tree at 6 clusters
 We will determine which of the the 3 grouping(3,5 or 6 clusters) is best by using a variance metric. This is calculated by the ratio of the between cluster sum of squares to the total sum of squares i.e. between_SS/total_SS. Each of the for loops below calculates the between_SS for 3,5 and 6 cluster model respectively.
 
 ```{r}
+
+tot_SS<-sum(dist.matrix^2)/nrow(salesdata)
+between_SS<- sum(apply(salesdata,2,sum)^2)/nrow(salesdata)- tot_SS/length(unique(cluster_3))
+
+between_SS/tot_SS
+
+
 centroids_3<-aggregate(salesdata,by=list(cluster_3),FUN=mean)[,-1]#find the centroids of each of the 3 clusters
 cluster_3_freq<-table(cluster_3)/length(cluster_3)
 column_sums<-colSums((centroids_3-colMeans(salesdata))^2 )
@@ -394,8 +402,12 @@ kmeans.variance_6
 
 ```
 
-Since the variance values approaching 1 means a better clustering performance, the 6 cluster K means would be clustering model that performs the best.
+Since the variance values approaching 1 means a better clustering performance, the 6 cluster K means would be clustering model that performs the best. The below is a plot of the attributes againts each other coloured by the 6 clusters in k means
 
+```{r}
 
+plot(salesdata,col=km.results_6$cluster)
 
+```
 
+We can see itemtype and type to ship create very distinct clustering of the data, region and item type are also good contributors to the distinctions.
