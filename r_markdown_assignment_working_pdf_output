@@ -1,0 +1,401 @@
+---
+title: "620079044_assignment_1"
+author: "Jevaguhn Dixon"
+date: "2023-03-30"
+output: pdf_document
+geometry:
+- a4paper
+- landscape
+- left=0.5cm
+- right=0.5cm
+- top=1cm
+- bottom=1cm
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# ASSOCIATION RULES
+
+To determine the buying patterns of customers we need to know what items they usually buy together, to do this we are using association rule mining. for this We only need two columns from the dataset, the transaction ID(InvoiceNo) and the itemsID (StockCode). However we need to first clean the data.
+
+## DATA CLEANING
+
+
+
+```{r cars}
+rm(list = ls()) 
+
+library("arules")#load library to do association rules
+library("knitr")
+retail<-read.csv("OnlineRetail.csv",stringsAsFactors = FALSE)
+str(retail)
+View(retail)
+summary(retail)
+
+```
+
+
+We are only concerned with the Netherlands subset of the OnlineRetail Data.
+
+```{r}
+retail<-retail[retail$Country=="Netherlands",]#truncates the data to netherlands only
+```
+$\\ \\ \\ \\ \\$
+
+From viewing online retail dataset and sorting by the "InvoiceNo" column, we can see that some values are pre-pended with a 'C", we need to remove the "C"
+
+```{r}
+retail$InvoiceNo<-gsub("C","",retail$InvoiceNo)# substitutes C with an empty string in InvoiceNo column
+summary(retail$InvoiceNo)
+```
+$\\ \\$
+
+Now that all values in "InvoiceNo" column are numeric, they are converted to numbers and placed in newly created "InvoiceNoVals" column
+```{r}
+retail$InvoiceNoVals<-as.integer(retail$InvoiceNo)#convert strings to numbers.
+summary(retail$InvoiceNoVals)#we can see the data is clean for this column
+```
+
+Now checking to make sure "StockCode" column is clean, from viewing the data, we can see that stockcode is alphanumeric and cannot be converted to numbers, however we can remove the rows where the item is post, as this indicates postage not actual items. We will also drop all the other columns we dont need and only keep "StockCode" and "InvoiceNo
+```{r}
+retail<-retail[retail$StockCode!="POST",]#drop post items
+colnames(retail)#column 9 and 2
+retail<- retail[,c(9,2)]#drop columns apart from StockCode and InvoiceNo
+colnames(retail)
+```
+
+
+```{r pressure, echo=FALSE}
+plot(table(retail$StockCode))
+```
+
+Write dataframe to csv file
+```{r}
+write.csv(retail,"subset_Netherlands01.csv",row.names = FALSE)#export dataframe so we can reimport as transaction
+```
+
+## ASSOCIATION RULE MINING
+
+Read transactions, with separator ','(csv file). 
+```{r}
+subset.netherlands<- read.transactions("subset_Netherlands01.csv",format=c("single"),cols=c("InvoiceNoVals","StockCode"),rm.duplicates = FALSE,header=TRUE,sep = ",")
+inspect(subset.netherlands[1:2])#view transactions 1 and 2
+```
+$\\ \\$
+checking out reasonable value for support, top 20 items are above 0.1
+```{r}
+itemFrequencyPlot(subset.netherlands,topN=20)#checking out reasonable value for support, top 20 items have support above 0.1,
+```
+Using support of 0.1
+```{r}
+itemFrequencyPlot(subset.netherlands,support=0.10)#Using support of 0.1
+```
+$\\ \\$
+In order to see item description corresponding to each StockCode, we re-load the original dataset in a new variable.
+```{r}
+retail1<-read.csv("OnlineRetail.csv",stringsAsFactors = FALSE)
+View(retail1)
+retail1[retail1$StockCode=="85099B","Description"][1]#find out what item corresponds to a StockCode
+```
+$\\ \\ \\ \\$
+
+##Generate Rules
+
+Generate Rules using apriori function, and convert to dataframe, after some experimentation we are using support>0.1, confidence>0.7, it is further filtered by lift>4
+```{r}
+rules<-apriori(subset.netherlands,parameter = list(confidence=0.7,support=0.09,minlen=2))
+rules<-rules[quality(rules)$lift>3.5]#filter by lift > 4
+kable(inspect(rules))
+rulesdf<- as.data.frame(inspect(rules))
+```
+Drop the curly brackets around the StockCode values, and do a lookup of their corresponding descriptions from the original dataset and append them to the rules dataframe for easy reference.
+```{r}
+
+rulesdf[,1]<-as.character(gsub("[^[:alnum:],]", "", rulesdf[,1]))#extract numeric character and commas
+rulesdf[,3]<-as.character(gsub("[^[:alnum:],]", "", rulesdf[,3]))#extract numeric characters and commas
+
+for(i in 1:nrow(rulesdf)) {#find the description for each 
+  ante<-strsplit(rulesdf[i,1],",")[[1]]#split antecedent items
+  conse<-strsplit(rulesdf[i,3],",")[[1]]#split consequenct items
+  ante_final<-""
+  conse_final<-""
+  for( j in 1:length(ante) ){
+        ante_final<-paste0(ante_final, retail1[retail1$StockCode==ante[j],"Description"][1],"," )  
+   }
+  #print(ante_final)
+  
+  for (k in 1:length(conse) ){
+    conse_final<-paste0(conse_final, retail1[retail1$StockCode==conse[k],"Description"][1],"," )  
+  }    
+  rulesdf$lhs_description[i]<-ante_final
+  rulesdf$rhs_description[i]<-conse_final
+
+}
+
+kable(rulesdf)
+```
+
+
+
+The output above was generated with mining values lift >4, confidence>0.7, support>0.1:
+
+### Interesting Rule 1: Rule 14
+Rule *One thing we can see if that if a person buys a "Red Toadstoll led night light" they are 337% more likely to buy a woodland Charlotte bag, this is with a confidence of 0.71 and a support of 0.14.
+
+### Interesting Rule 2: Rule 10
+Another thing we can see is if a person buys Cowboys and Indians Birthday Card, they are likely to purchase Round Snack Boxes set of 4 woodland. This is with a confidence of 0.9, support of 0.91, and a lift of 3.5, so they are 250% more likely to make buy the snack boxes if they bought the cowboys and indians birthday card.
+
+
+# CLUSTERING
+
+For Clustering we need to clean the data and convert each column to a numeric value, and finally normalize the value ranges.
+## Data Cleaning 
+$\\ \\$
+
+First we used the read csv function to convert missing/unknown values to NA
+```{r}
+rm(list = ls()) 
+
+library(ggplot2)
+salesdata<-read.csv("SalesData.csv",na.strings = c("","?","??","???",'""'))#convert missing/ambigous values to NA
+summary(salesdata)
+str(salesdata)
+```
+$\\ \\$
+
+Next we go column by column and clean the data as seen appropriate
+
+$\\ \\$
+
+##### Order.ID
+We remove the Order.ID column, all the data here us unique
+```{r}
+salesdata$Order.ID<-NULL
+
+```
+
+##### Order.Date and Ship.Date
+The difference in the number of days between Ordering and Shipping is calculated and placed as a new column called timetoship, the Order.Date and Ship.Date columns are then dropped as timetoship is likely not strongly related to the order dates, and more likely a function of other attributes such as item type, region, order priority etc.
+```{r}
+same_format <- all(grepl("^\\d{2}-\\d{2}-\\d{4}$", salesdata$date_col)) ||
+  all(grepl("^\\d{2}/\\d{2}/\\d{4}$", salesdata$date_col))# checks if the data is all in the same format
+print(same_format)#returns true meaning dates are all in the same format
+#find the time between shipment and ordering in number of days 
+salesdata$timetoship<-as.integer(as.character( as.Date(salesdata$Ship.Date, format = "%m/%d/%Y")-as.Date(salesdata$Order.Date,format = "%m/%d/%Y")))
+summary(salesdata$timetoship)#time to ship value range is from 0 to 50
+salesdata$Order.Date<-NULL#drop column
+salesdata$Ship.Date<-NULL#drop column
+
+```
+
+##### Sales.Channel
+These data has "Offline", "Online" and "YES". The "YES" values are interpreted as "Online" and these values are set to 1, Online is set to 0.
+```{r}
+table(salesdata$Sales.Channel)#values have offline, online and yes, assuming yes means online
+summary(salesdata$Sales.Channel)
+#salesdata$Sales.Channel<-salesdata[salesdata$Sales.Channel,]
+salesdata$Sales.Channel<-ifelse(salesdata$Sales.Channel=="YES" | salesdata$Sales.Channel=="Online",1,0)
+salesdata<-salesdata[!is.na(salesdata$Sales.Channel),] #drop rows with values
+table(salesdata$Sales.Channel)
+plot(table(salesdata$Sales.Channel))
+summary(salesdata$Sales.Channel)
+
+```
+
+#### Order.priority
+No NA's observed, each priority values is mapped to a number using the factor levels.
+```{r}
+table(salesdata$Order.Priority)#seems clean enough,convert each to a number using factors
+salesdata$Order.Priority<-as.factor(salesdata$Order.Priority)
+levels(salesdata$Order.Priority)
+salesdata$Order.Priority<-as.numeric(salesdata$Order.Priority)#map priority values to corresponding factor number list positions
+plot(table(salesdata$Order.Priority))
+
+```
+
+
+#### Region
+Some rows have region value NA, these were dropped, as the order would not have been able to be completed without they buyer indicating where to ship to. The rest of the region values were converted to factors and mapped to numbers.
+```{r}
+plot(table(salesdata$Region))#not a lot of then, convert to factors and map to numbers
+salesdata$Region<- as.numeric(as.factor(salesdata$Region))
+summary(salesdata$Region)
+salesdata<-salesdata[!is.na(salesdata$Region),]#drop rows with region as NA
+summary(salesdata$Region)
+
+sum(is.na(salesdata))
+
+
+```
+
+
+#### ItemType
+Some NA values are observed in this column, the itemtypes were converted to factors and the NA values set to existing type "None".
+The itemtypes were then mapped to numbers.
+```{r}
+summary(salesdata$ItemType)
+table(salesdata$ItemType)
+salesdata$ItemType[is.na(salesdata$ItemType)]<-"None"#assign NA to level None
+#none item type interpret as NA
+salesdata$ItemType<-as.factor(salesdata$ItemType)
+levels(salesdata$ItemType)
+salesdata$ItemType<-as.numeric(salesdata$ItemType)#map item to item level
+```
+
+
+#### Units.Sold
+These values are originally observed to be continuous numbers, they were checked for outliers and discretized using equal width binning as the number of units sold per row is approximately equal.
+```{r}
+summary(salesdata$Units.Sold)#all numeric
+sd(salesdata$Units.Sold)
+hist(salesdata$Units.Sold)
+boxplot(salesdata$Units.Sold)
+plot(density(salesdata$Units.Sold))
+mean(salesdata$Units.Sold)-2*sd(salesdata$Units.Sold)#min value is not an outlier
+mean(salesdata$Units.Sold)+2*sd(salesdata$Units.Sold)#max value is not an outlier
+salesdata$Units.Sold<-as.numeric(as.character(cut(salesdata$Units.Sold,c(0,2000,4000,6000,8000,10000),right = FALSE, labels = c(1,2,3,4,5))))#right is referring to right intervals open or closed
+summary(salesdata$Units.Sold)
+
+```
+
+#### Unit.Price
+No NA, values are numeric continuous data,no outliers, this data was then discretized.
+```{r}
+summary(salesdata$Unit.Price)#all numeric
+hist(salesdata$Unit.Price)
+plot(density(salesdata$Unit.Price))
+mean(salesdata$Unit.Price)-2*sd(salesdata$Unit.Price)#min value is not an outlier
+mean(salesdata$Unit.Price)+2*sd(salesdata$Unit.Price)#max value is not an outlier
+#salesdata$Unit.Price<-as.numeric(as.character(cut(salesdata$Unit.Price,c(0,150,300,450,750),right = FALSE, labels = c(1,2,3,4))))
+salesdata$Unit.Price<-as.numeric(as.character(cut(salesdata$Unit.Price,c(0,150,300,450,750),right = FALSE, labels = c(1,2,3,4))))
+summary(salesdata$Unit.Price)
+hist(salesdata$Unit.Price)
+sum(is.na(salesdata))#no more NA values in the dataset 85% of rows remaining
+
+```
+
+Now there are no more missing values in the dataset, with 85% of rows remaining. We move on to normalization
+
+
+## MIN MAX NORMALIZATION
+
+Region value ranges 
+```{r}
+summary(salesdata)
+str(salesdata)
+
+```
+values ranges of most columns are in similar ranges except timetoship, this column will be normalize to range 1-10
+
+```{r}
+newmin<-0
+newmax<-10
+timetoship_<- ((salesdata[,"timetoship"]-min(salesdata$timetoship))/ (max(salesdata$timetoship)-min(salesdata$timetoship))) * (newmax-newmin) + newmin  
+salesdata$timetoship<-timetoship_
+
+```
+
+All the attributes are numerical and in similar value ranges, we can go on to the using clustering algorithms.
+$\\ \\$
+
+## AGGLOMERATIVE CLUSTERING
+
+```{r}
+dist.matrix<-dist(salesdata)#create distance matric
+hclust<-hclust(dist.matrix,method = "average")#using the average method as the measure of distance
+plot(hclust)#plot the dendrogram
+
+cluster_3<-cutree(hclust,3)#cut tree at 3 clusters
+cluster_5<-cutree(hclust,5)#cut tree at 5 clusters
+cluster_6<-cutree(hclust,6)#cut tree at 6 clusters
+```
+
+## AGGLOMERATIVE CLUSTER PERFORMANCE
+
+We will determine which of the the 3 grouping(3,5 or 6 clusters) is best by using a variance metric. This is calculated by the ratio of the between cluster sum of squares to the total sum of squares i.e. between_SS/total_SS. Each of the for loops below calculates the between_SS for 3,5 and 6 cluster model respectively.
+
+```{r}
+centroids_3<-aggregate(salesdata,by=list(cluster_3),FUN=mean)[,-1]#find the centroids of each of the 3 clusters
+cluster_3_freq<-table(cluster_3)/length(cluster_3)
+column_sums<-colSums((centroids_3-colMeans(salesdata))^2 )
+between_ss_3<-0
+for(i in 1:nrow(cluster_3_freq)){ ##calculate the between_SS value for the 3 clusters agglomerative 
+ prod<-cluster_3_freq[i]*column_sums  
+ between_ss_3<-sum(between_ss_3,prod)
+}
+
+centroids_5<-aggregate(salesdata,by=list(cluster_5),FUN=mean)[,-1]
+cluster_5_freq<-table(cluster_5)/length(cluster_5)
+column_sums<-colSums((centroids_5-colMeans(salesdata))^2 )
+between_ss_5<-0
+for(i in 1:nrow(cluster_5_freq)){##calculate the between_SS value for the 5 clusters agglomerative 
+  prod<-cluster_5_freq[i]*column_sums  
+  between_ss_5<-sum(between_ss_5,prod)
+}
+
+centroids_6<-aggregate(salesdata,by=list(cluster_6),FUN=mean)[,-1]
+cluster_6_freq<-table(cluster_6)/length(cluster_6)
+column_sums<-colSums((centroids_6-colMeans(salesdata))^2 )
+between_ss_6<-0
+for(i in 1:nrow(cluster_6_freq)){##calculate the between_SS value for the 6 clusters agglomerative 
+  prod<-cluster_6_freq[i]*column_sums  
+  between_ss_6<-sum(between_ss_6,prod)
+}
+
+```
+
+Now we calculate the total_SS value
+```{r}
+tss1<-sum(dist(salesdata)^2)/nrow(salesdata)
+```
+
+now we calculate the variance explained for each of the three models, based on these results the 6 cluster model performs the best.
+```{r}
+variance_3<-between_ss_3/tss1
+variance_5<-between_ss_5/tss1
+variance_6<-between_ss_6/tss1
+
+variance_3
+variance_5
+variance_6
+```
+
+Now we repeat these calculations for the kmeans clustering model
+
+## KMEANS 
+
+Generate the clustering model for 3, 5 and 6 cluster respectively
+```{r}
+km.results_3<-kmeans(salesdata,3)
+km.results_5<-kmeans(salesdata,5)
+km.results_6<-kmeans(salesdata,6)
+
+
+```
+
+## KMEANS CLUSTER PERFORMANCE
+
+Now calculate the variance for each clustering model respectively
+```{r}
+kmeans.variance_3<- km.results_3$betweenss/km.results_3$totss
+kmeans.variance_5<- km.results_5$betweenss/km.results_5$totss
+kmeans.variance_6<- km.results_6$betweenss/km.results_6$totss
+
+
+kmeans.variance_3
+kmeans.variance_5
+kmeans.variance_6
+
+
+
+```
+
+Since the variance values approaching 1 means a better clustering performance, the 6 cluster K means would be clustering model that performs the best.
+
+
+
+
